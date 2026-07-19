@@ -200,7 +200,7 @@
   .btn:focus-visible{outline:2px solid var(--gold-bright);outline-offset:3px;}
 
   /* ---------- host tools ---------- */
-  #hostToggle{position:fixed;right:14px;bottom:14px;z-index:30;width:46px;height:46px;border-radius:50%;border:1px solid rgba(216,182,115,.5);background:rgba(14,8,36,.8);color:var(--gold);cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);box-shadow:0 6px 20px rgba(0,0,0,.4);transition:transform .2s ease;}
+  #hostToggle{position:fixed;right:14px;bottom:14px;z-index:30;width:46px;height:46px;border-radius:50%;border:1px solid rgba(216,182,115,.5);background:rgba(14,8,36,.8);color:var(--gold);cursor:pointer;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px);box-shadow:0 6px 20px rgba(0,0,0,.4);transition:transform .2s ease;}
   #hostToggle:hover{transform:scale(1.08);}
   #hostToggle svg{width:20px;height:20px;}
   #hostToggle:focus-visible{outline:2px solid var(--gold-bright);outline-offset:2px;}
@@ -267,6 +267,7 @@
         <path d="M50 30 v24 M39 40 h22" stroke="#b23a54" stroke-width="2.6" fill="none" stroke-linecap="round"/>
         <path d="M28 62 Q50 78 72 62" stroke="#5fbf9b" stroke-width="2" fill="none"/>
       </svg>
+      <div class="cinv">Wedding of</div>
       <div class="cnames">Deepak <span class="camp">&amp;</span> Benita</div>
       <div class="cinv">You're Invited</div>
     </div>
@@ -572,6 +573,7 @@ Tap the link to open your invitation:</textarea>
 
   /* ===== EASILY EDITABLE CONFIG ===== */
   var CONFIG = {
+    hostKey: "deepakbenita",   // <- your private word. Only links ending ?host=deepakbenita can open the creator.
     ceremony: {
       title: "Wedding of Deepak & Benita — Holy Matrimony",
       location: "St. Antony's Church, Avadi, Chennai, Tamil Nadu",
@@ -677,7 +679,11 @@ Tap the link to open your invitation:</textarea>
   /* ===== base URL used by Host Tools to build personalized links ===== */
   var baseURL = window.location.origin + window.location.pathname;
 
-  /* ===== host tools ===== */
+  /* ===== host tools (private — only the couple) ===== */
+  var hostAllowed = (new URLSearchParams(window.location.search).get("host") === CONFIG.hostKey);
+  var hostToggleBtn = $("#hostToggle");
+  if(hostAllowed && hostToggleBtn){ hostToggleBtn.style.display = "flex"; }
+
   var hostPanel = $("#hostPanel");
   var gInput = $("#gInput");
   var msgInput = $("#msgInput");
