@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Deepak & Benita · Wedding Invitation</title>
 <meta name="description" content="With joyful hearts, Deepak & Benita invite you to their wedding — 13 September 2026, Avadi." />
+<!-- Link preview card (WhatsApp, iMessage, Facebook, etc.) -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Deepak & Benita — Wedding Invitation 💍" />
+<meta property="og:description" content="You're invited! Sunday, 13 September 2026 · St. Antony's Church, Avadi, Chennai. Tap to open your invitation." />
+<meta property="og:site_name" content="Deepak & Benita's Wedding" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Deepak & Benita — Wedding Invitation 💍" />
+<meta name="twitter:description" content="You're invited! Sunday, 13 September 2026 · Avadi, Chennai." />
+<!-- Optional: for a large image in the preview, host a 1200x630 image and uncomment the next two lines with its full https URL -->
+<!-- <meta property="og:image" content="https://your-site.netlify.app/preview.jpg" /> -->
+<!-- <meta name="twitter:image" content="https://your-site.netlify.app/preview.jpg" /> -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Pinyon+Script&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
@@ -491,7 +502,7 @@
         <div class="etype">Reception</div>
         <div class="etime">6:00 PM</div>
         <div class="evenue">Tamil Nadu Police Convention Hall</div>
-        <div class="eaddr">Chennai, Tamil Nadu</div>
+        <div class="eaddr">Avadi, Chennai, Tamil Nadu</div>
         <div class="btns">
           <a class="btn solid" data-map="reception" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -616,10 +627,25 @@ Tap the link to open your invitation:</textarea>
     autoT = setTimeout(openEnvelope, 4600); // opens on its own if the guest doesn't tap
   })();
 
-  /* ===== personalized greeting from ?to= ===== */
+  /* ===== name scrambling (so the link never spells out the guest's name) ===== */
+  function encName(name){
+    try {
+      return btoa(encodeURIComponent(name)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+    } catch(e){ return encodeURIComponent(name); }
+  }
+  function decName(tok){
+    try {
+      var b = tok.replace(/-/g,"+").replace(/_/g,"/");
+      return decodeURIComponent(atob(b));
+    } catch(e){ return null; }
+  }
+
+  /* ===== personalized greeting from the link ===== */
   function getGuest(){
     var p = new URLSearchParams(window.location.search);
-    var t = p.get("to") || p.get("name") || p.get("guest");
+    var g = p.get("g");                       // scrambled token (new, preferred)
+    if(g){ var d = decName(g); if(d) return d.trim().slice(0,60); }
+    var t = p.get("to") || p.get("name") || p.get("guest");  // plain (still supported)
     if(!t) return null;
     return decodeURIComponent(t).trim().slice(0,60);
   }
@@ -682,7 +708,12 @@ Tap the link to open your invitation:</textarea>
   /* ===== host tools (private — only the couple) ===== */
   var hostAllowed = (new URLSearchParams(window.location.search).get("host") === CONFIG.hostKey);
   var hostToggleBtn = $("#hostToggle");
-  if(hostAllowed && hostToggleBtn){ hostToggleBtn.style.display = "flex"; }
+  if(hostAllowed && hostToggleBtn){
+    hostToggleBtn.style.display = "flex";
+    // wipe ?host=... from the address bar so the secret word is never shown on screen
+    // or copied by accident. The creator stays unlocked for this visit.
+    try { history.replaceState({}, "", baseURL); } catch(e){}
+  }
 
   var hostPanel = $("#hostPanel");
   var gInput = $("#gInput");
@@ -692,7 +723,7 @@ Tap the link to open your invitation:</textarea>
   function buildLink(){
     var name = gInput.value.trim();
     if(!name) return baseURL;
-    return baseURL + "?to=" + encodeURIComponent(name);
+    return baseURL + "?g=" + encName(name);
   }
   function buildMessage(){
     var name = gInput.value.trim() || "Friend";
