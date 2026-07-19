@@ -13,11 +13,12 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Deepak & Benita — Wedding Invitation 💍" />
 <meta name="twitter:description" content="You're invited! Sunday, 13 September 2026 · Avadi, Chennai." />
-<!-- Preview image: upload preview.jpg next to index.html, then REPLACE "your-site" below with your real site name (keep the /preview.jpg part). -->
-<meta property="og:image" content="https://deepak-benita-wedding-invite.netlify.app/preview.jpg" />
+<!-- Preview image. This MUST match your live site address exactly. Yours (GitHub Pages) is below. -->
+<meta property="og:image" content="https://ben001122.github.io/wedding/preview.jpg" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta name="twitter:image" content="https://deepak-benita-wedding-invite.netlify.app/preview.jpg" />
+<meta name="twitter:image" content="https://ben001122.github.io/wedding/preview.jpg" />
+<meta property="og:url" content="https://ben001122.github.io/wedding/" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Pinyon+Script&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
@@ -694,14 +695,43 @@ Tap the link to open your invitation:</textarea>
     a.href = ev.map;
   });
 
-  /* ===== add to calendar (Google Calendar — one tap on mobile) ===== */
-  $$("[data-cal]").forEach(function(a){
-    var ev = CONFIG[a.getAttribute("data-cal")];
-    a.href = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+  /* ===== add to calendar =====
+     iPhone/iPad -> .ics so it opens in Apple Calendar.
+     Android & desktop -> Google Calendar template (Android's default + universal fallback). */
+  var _ua = navigator.userAgent || "";
+  var isApple = /iPad|iPhone|iPod/.test(_ua) || (/Macintosh/.test(_ua) && "ontouchend" in document);
+  function icsEsc(s){ return String(s).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n"); }
+  function icsStamp(){ return new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z"; }
+  function gcalURL(ev){
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE"
       + "&text=" + encodeURIComponent(ev.title)
       + "&dates=" + ev.startUTC + "/" + ev.endUTC
       + "&details=" + encodeURIComponent("With love, Deepak & Benita\nLocation: " + ev.map)
       + "&location=" + encodeURIComponent(ev.location);
+  }
+  function icsText(ev){
+    return ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//DeepakBenita//Wedding//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      "UID:"+ev.startUTC+"-deepakbenita",
+      "DTSTAMP:"+icsStamp(),
+      "DTSTART:"+ev.startUTC,
+      "DTEND:"+ev.endUTC,
+      "SUMMARY:"+icsEsc(ev.title),
+      "LOCATION:"+icsEsc(ev.location),
+      "DESCRIPTION:"+icsEsc("With love, Deepak & Benita"),
+      "END:VEVENT","END:VCALENDAR"].join("\r\n");
+  }
+  $$("[data-cal]").forEach(function(a){
+    var ev = CONFIG[a.getAttribute("data-cal")];
+    a.href = gcalURL(ev);   // Android + desktop + fallback
+    a.addEventListener("click", function(e){
+      if(isApple){
+        e.preventDefault();
+        // data: URL opens straight into the Apple Calendar "Add Event" sheet on iOS
+        window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(icsText(ev));
+      }
+      // otherwise the link follows through to Google Calendar in a new tab
+    });
   });
 
   /* ===== base URL used by Host Tools to build personalized links ===== */
@@ -805,35 +835,104 @@ Tap the link to open your invitation:</textarea>
   style.textContent = "@keyframes fall{0%{opacity:0;transform:translate(0,-40px) rotate(0deg);}10%{opacity:.85;}90%{opacity:.7;}100%{opacity:0;transform:translate(var(--drift),100vh) rotate(540deg);}}";
   document.head.appendChild(style);
 
-  /* ===== gentle music (synthesized wind-chime — no copyrighted audio) ===== */
-  var audioCtx=null, chimeTimer=null, musicOn=false;
-  var scale=[523.25,587.33,659.25,783.99,880.00,1046.50]; // C major pentatonic-ish, airy
+  /* ===== background music: cheerful music-box over a warm pad =====
+     Fully synthesized (no copyrighted audio). A bright I–V–vi–IV progression
+     in D major — uplifting but soft, to suit the twilight mood.
+     Starts on the first interaction (tapping the envelope counts), because
+     browsers block audio until the person interacts. */
+  var audioCtx=null, master=null, seqTimer=null, playing=false, musicWanted=false;
   var btn=$("#musicToggle");
-  function chime(){
+
+  var chords=[
+    { bass:146.83, pad:[293.66,369.99,440.00], arp:[587.33,440.00,739.99,880.00] }, // D
+    { bass:110.00, pad:[329.63,440.00,554.37], arp:[554.37,440.00,659.25,554.37] }, // A
+    { bass:123.47, pad:[246.94,369.99,493.88], arp:[493.88,369.99,587.33,739.99] }, // Bm
+    { bass:196.00, pad:[246.94,293.66,392.00], arp:[392.00,493.88,587.33,493.88] }  // G
+  ];
+  var stepDur=0.30, step=0, nextTime=0;
+
+  function voiceArp(freq,t,dur){
+    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    var o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
+    o.type="triangle"; o.frequency.value=freq;
+    o2.type="sine"; o2.frequency.value=freq*2; g2.gain.value=0.25; // gentle sparkle
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.11,t+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(master);
+    o.start(t); o2.start(t); o.stop(t+dur+0.05); o2.stop(t+dur+0.05);
+  }
+  function voicePad(freqs,t,dur){
+    freqs.forEach(function(f){
+      var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type="sine"; o.frequency.value=f;
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.020,t+0.25);
+      g.gain.setValueAtTime(0.020,t+dur-0.3);
+      g.gain.linearRampToValueAtTime(0.0001,t+dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t+dur+0.05);
+    });
+  }
+  function voiceBass(freq,t,dur){
+    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type="triangle"; o.frequency.value=freq;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.045,t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur*0.95);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+dur+0.05);
+  }
+  function scheduler(){
     if(!audioCtx) return;
-    var now=audioCtx.currentTime;
-    var f=scale[Math.floor(Math.random()*scale.length)];
-    var osc=audioCtx.createOscillator();
-    var gain=audioCtx.createGain();
-    osc.type="sine"; osc.frequency.value=f;
-    gain.gain.setValueAtTime(0,now);
-    gain.gain.linearRampToValueAtTime(0.06, now+0.05);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now+2.2);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(now); osc.stop(now+2.3);
+    while(nextTime < audioCtx.currentTime + 0.25){
+      var ci=Math.floor(step/4)%4, inCh=step%4, ch=chords[ci];
+      if(inCh===0){ voicePad(ch.pad,nextTime,stepDur*4); voiceBass(ch.bass,nextTime,stepDur*4); }
+      voiceArp(ch.arp[inCh], nextTime, stepDur*0.9);
+      nextTime += stepDur; step++;
+    }
   }
-  function startMusic(){
-    if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }
+  function enginePlay(){
+    if(!audioCtx){
+      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      master=audioCtx.createGain(); master.gain.value=0; master.connect(audioCtx.destination);
+    }
     if(audioCtx.state==="suspended") audioCtx.resume();
-    musicOn=true; btn.classList.add("on"); btn.setAttribute("aria-label","Pause background music");
-    chime();
-    chimeTimer=setInterval(function(){ if(Math.random()>0.35) chime(); }, 1400);
+    playing=true; btn.classList.add("on");
+    master.gain.cancelScheduledValues(audioCtx.currentTime);
+    master.gain.setValueAtTime(master.gain.value, audioCtx.currentTime);
+    master.gain.linearRampToValueAtTime(0.8, audioCtx.currentTime+1.0); // gentle fade in
+    step=0; nextTime=audioCtx.currentTime+0.08;
+    scheduler(); clearInterval(seqTimer); seqTimer=setInterval(scheduler,60);
   }
-  function stopMusic(){
-    musicOn=false; btn.classList.remove("on"); btn.setAttribute("aria-label","Play background music");
-    clearInterval(chimeTimer);
+  function enginePause(){
+    playing=false; btn.classList.remove("on");
+    clearInterval(seqTimer);
+    if(master && audioCtx){
+      master.gain.cancelScheduledValues(audioCtx.currentTime);
+      master.gain.setValueAtTime(master.gain.value,audioCtx.currentTime);
+      master.gain.linearRampToValueAtTime(0.0001,audioCtx.currentTime+0.3);
+      setTimeout(function(){ if(!playing && audioCtx){ try{ audioCtx.suspend(); }catch(e){} } }, 360);
+    }
   }
-  btn.addEventListener("click", function(){ musicOn?stopMusic():startMusic(); });
+  function startMusic(){ musicWanted=true; if(!playing) enginePlay(); btn.setAttribute("aria-label","Pause music"); }
+  function stopMusic(){ musicWanted=false; enginePause(); btn.setAttribute("aria-label","Play music"); }
+  btn.addEventListener("click", function(){ musicWanted ? stopMusic() : startMusic(); });
+
+  // Only play while this tab is open and in view — pause when the guest switches tabs/apps.
+  document.addEventListener("visibilitychange", function(){
+    if(document.hidden){ if(playing) enginePause(); }
+    else if(musicWanted && !playing){ enginePlay(); }
+  });
+
+  // Play by default: begin at the first user gesture anywhere (the envelope tap counts).
+  var musicAuto=false;
+  function musicAutoStart(){
+    if(musicAuto) return; musicAuto=true;
+    ["pointerdown","touchstart","keydown"].forEach(function(ev){ document.removeEventListener(ev,musicAutoStart); });
+    startMusic();
+  }
+  ["pointerdown","touchstart","keydown"].forEach(function(ev){ document.addEventListener(ev,musicAutoStart,{passive:true}); });
 
 })();
 </script>
