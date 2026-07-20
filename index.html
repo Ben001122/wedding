@@ -530,6 +530,9 @@
   </footer>
 </div>
 
+<!-- background music (host music.mp3 next to index.html) -->
+<audio id="bgm" loop preload="auto" src="music.mp3"></audio>
+
 <!-- music -->
 <button id="musicToggle" aria-label="Play background music" title="Play soft music">
   <span class="music-ring"></span>
@@ -696,42 +699,16 @@ Tap the link to open your invitation:</textarea>
   });
 
   /* ===== add to calendar =====
-     iPhone/iPad -> .ics so it opens in Apple Calendar.
-     Android & desktop -> Google Calendar template (Android's default + universal fallback). */
-  var _ua = navigator.userAgent || "";
-  var isApple = /iPad|iPhone|iPod/.test(_ua) || (/Macintosh/.test(_ua) && "ontouchend" in document);
-  function icsEsc(s){ return String(s).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n"); }
-  function icsStamp(){ return new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z"; }
-  function gcalURL(ev){
-    return "https://calendar.google.com/calendar/render?action=TEMPLATE"
+     Uses the Google Calendar template link on every device. This reliably opens a
+     calendar "add event" screen (Google Calendar app on Android; app or web on iPhone)
+     with no file to download. A raw .ics link, by contrast, just downloads on phones. */
+  $$("[data-cal]").forEach(function(a){
+    var ev = CONFIG[a.getAttribute("data-cal")];
+    a.href = "https://calendar.google.com/calendar/render?action=TEMPLATE"
       + "&text=" + encodeURIComponent(ev.title)
       + "&dates=" + ev.startUTC + "/" + ev.endUTC
       + "&details=" + encodeURIComponent("With love, Deepak & Benita\nLocation: " + ev.map)
       + "&location=" + encodeURIComponent(ev.location);
-  }
-  function icsText(ev){
-    return ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//DeepakBenita//Wedding//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
-      "BEGIN:VEVENT",
-      "UID:"+ev.startUTC+"-deepakbenita",
-      "DTSTAMP:"+icsStamp(),
-      "DTSTART:"+ev.startUTC,
-      "DTEND:"+ev.endUTC,
-      "SUMMARY:"+icsEsc(ev.title),
-      "LOCATION:"+icsEsc(ev.location),
-      "DESCRIPTION:"+icsEsc("With love, Deepak & Benita"),
-      "END:VEVENT","END:VCALENDAR"].join("\r\n");
-  }
-  $$("[data-cal]").forEach(function(a){
-    var ev = CONFIG[a.getAttribute("data-cal")];
-    a.href = gcalURL(ev);   // Android + desktop + fallback
-    a.addEventListener("click", function(e){
-      if(isApple){
-        e.preventDefault();
-        // data: URL opens straight into the Apple Calendar "Add Event" sheet on iOS
-        window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(icsText(ev));
-      }
-      // otherwise the link follows through to Google Calendar in a new tab
-    });
   });
 
   /* ===== base URL used by Host Tools to build personalized links ===== */
@@ -835,94 +812,45 @@ Tap the link to open your invitation:</textarea>
   style.textContent = "@keyframes fall{0%{opacity:0;transform:translate(0,-40px) rotate(0deg);}10%{opacity:.85;}90%{opacity:.7;}100%{opacity:0;transform:translate(var(--drift),100vh) rotate(540deg);}}";
   document.head.appendChild(style);
 
-  /* ===== background music: cheerful music-box over a warm pad =====
-     Fully synthesized (no copyrighted audio). A bright I–V–vi–IV progression
-     in D major — uplifting but soft, to suit the twilight mood.
-     Starts on the first interaction (tapping the envelope counts), because
-     browsers block audio until the person interacts. */
-  var audioCtx=null, master=null, seqTimer=null, playing=false, musicWanted=false;
-  var btn=$("#musicToggle");
+  /* ===== background music =====
+     Plays an original MP3 (music.mp3) hosted next to index.html — far more reliable
+     on phones than synthesized audio. Starts on the first interaction (the envelope
+     tap counts); pauses when the tab is hidden; the button toggles it. */
+  var bgm = document.getElementById("bgm");
+  var btn = $("#musicToggle");
+  var musicWanted = false, fadeTimer = null;
+  var TARGET_VOL = 0.85;
+  if(bgm){ bgm.volume = 0; bgm.loop = true; }
 
-  var chords=[
-    { bass:146.83, pad:[293.66,369.99,440.00], arp:[587.33,440.00,739.99,880.00] }, // D
-    { bass:110.00, pad:[329.63,440.00,554.37], arp:[554.37,440.00,659.25,554.37] }, // A
-    { bass:123.47, pad:[246.94,369.99,493.88], arp:[493.88,369.99,587.33,739.99] }, // Bm
-    { bass:196.00, pad:[246.94,293.66,392.00], arp:[392.00,493.88,587.33,493.88] }  // G
-  ];
-  var stepDur=0.30, step=0, nextTime=0;
-
-  function voiceArp(freq,t,dur){
-    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    var o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
-    o.type="triangle"; o.frequency.value=freq;
-    o2.type="sine"; o2.frequency.value=freq*2; g2.gain.value=0.25; // gentle sparkle
-    g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(0.11,t+0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(master);
-    o.start(t); o2.start(t); o.stop(t+dur+0.05); o2.stop(t+dur+0.05);
-  }
-  function voicePad(freqs,t,dur){
-    freqs.forEach(function(f){
-      var o=audioCtx.createOscillator(), g=audioCtx.createGain();
-      o.type="sine"; o.frequency.value=f;
-      g.gain.setValueAtTime(0,t);
-      g.gain.linearRampToValueAtTime(0.020,t+0.25);
-      g.gain.setValueAtTime(0.020,t+dur-0.3);
-      g.gain.linearRampToValueAtTime(0.0001,t+dur);
-      o.connect(g); g.connect(master);
-      o.start(t); o.stop(t+dur+0.05);
-    });
-  }
-  function voiceBass(freq,t,dur){
-    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type="triangle"; o.frequency.value=freq;
-    g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(0.045,t+0.03);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+dur*0.95);
-    o.connect(g); g.connect(master);
-    o.start(t); o.stop(t+dur+0.05);
-  }
-  function scheduler(){
-    if(!audioCtx) return;
-    while(nextTime < audioCtx.currentTime + 0.25){
-      var ci=Math.floor(step/4)%4, inCh=step%4, ch=chords[ci];
-      if(inCh===0){ voicePad(ch.pad,nextTime,stepDur*4); voiceBass(ch.bass,nextTime,stepDur*4); }
-      voiceArp(ch.arp[inCh], nextTime, stepDur*0.9);
-      nextTime += stepDur; step++;
-    }
+  function fadeTo(target, ms){
+    if(!bgm) return;
+    clearInterval(fadeTimer);
+    var start = bgm.volume, t0 = (window.performance ? performance.now() : Date.now());
+    fadeTimer = setInterval(function(){
+      var now = (window.performance ? performance.now() : Date.now());
+      var p = Math.min(1, (now - t0) / ms);
+      try { bgm.volume = Math.max(0, Math.min(1, start + (target - start) * p)); } catch(e){}
+      if(p >= 1){ clearInterval(fadeTimer); if(target === 0){ try{ bgm.pause(); }catch(e){} } }
+    }, 40);
   }
   function enginePlay(){
-    if(!audioCtx){
-      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      master=audioCtx.createGain(); master.gain.value=0; master.connect(audioCtx.destination);
-    }
-    if(audioCtx.state==="suspended") audioCtx.resume();
-    playing=true; btn.classList.add("on");
-    master.gain.cancelScheduledValues(audioCtx.currentTime);
-    master.gain.setValueAtTime(master.gain.value, audioCtx.currentTime);
-    master.gain.linearRampToValueAtTime(0.8, audioCtx.currentTime+1.0); // gentle fade in
-    step=0; nextTime=audioCtx.currentTime+0.08;
-    scheduler(); clearInterval(seqTimer); seqTimer=setInterval(scheduler,60);
+    if(!bgm) return;
+    var pr = bgm.play();
+    if(pr && pr.catch) pr.catch(function(){});   // ignore autoplay rejections
+    btn.classList.add("on"); fadeTo(TARGET_VOL, 900);
   }
   function enginePause(){
-    playing=false; btn.classList.remove("on");
-    clearInterval(seqTimer);
-    if(master && audioCtx){
-      master.gain.cancelScheduledValues(audioCtx.currentTime);
-      master.gain.setValueAtTime(master.gain.value,audioCtx.currentTime);
-      master.gain.linearRampToValueAtTime(0.0001,audioCtx.currentTime+0.3);
-      setTimeout(function(){ if(!playing && audioCtx){ try{ audioCtx.suspend(); }catch(e){} } }, 360);
-    }
+    if(!bgm) return;
+    btn.classList.remove("on"); fadeTo(0, 350);
   }
-  function startMusic(){ musicWanted=true; if(!playing) enginePlay(); btn.setAttribute("aria-label","Pause music"); }
-  function stopMusic(){ musicWanted=false; enginePause(); btn.setAttribute("aria-label","Play music"); }
+  function startMusic(){ musicWanted = true; enginePlay(); btn.setAttribute("aria-label","Pause music"); }
+  function stopMusic(){ musicWanted = false; enginePause(); btn.setAttribute("aria-label","Play music"); }
   btn.addEventListener("click", function(){ musicWanted ? stopMusic() : startMusic(); });
 
-  // Only play while this tab is open and in view — pause when the guest switches tabs/apps.
+  // Only play while this tab is open and in view.
   document.addEventListener("visibilitychange", function(){
-    if(document.hidden){ if(playing) enginePause(); }
-    else if(musicWanted && !playing){ enginePlay(); }
+    if(document.hidden){ if(musicWanted) enginePause(); }
+    else if(musicWanted){ enginePlay(); }
   });
 
   // Play by default: begin at the first user gesture anywhere (the envelope tap counts).
